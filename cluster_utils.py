@@ -355,6 +355,8 @@ class RAPTOR_DBSCAN_Clustering(ClusteringAlgorithm):
         som_y: int = 5,
         som_iterations: int = 1500,
         verbose: bool = False,
+        current_depth: int = 0,
+        max_depth: int = 5,
     ) -> List[List[Node]]:
         """Cluster nodes using UMAP reduction + DBSCAN.
 
@@ -391,7 +393,6 @@ class RAPTOR_DBSCAN_Clustering(ClusteringAlgorithm):
         for label in unique_labels:
             indices = np.where(labels == label)[0]
 
-            # Noise points (-1) become single-node clusters
             if label == -1:
                 for idx in indices:
                     node_clusters.append([nodes[idx]])
@@ -410,25 +411,63 @@ class RAPTOR_DBSCAN_Clustering(ClusteringAlgorithm):
             if total_length > max_length_in_cluster:
                 if verbose:
                     logging.info(
-                        f"[DBSCAN] Reclustering cluster with {len(cluster_nodes)} nodes, total_length={total_length}"
+                        f"[DBSCAN] Reclustering cluster with {len(cluster_nodes)} nodes, total_length={total_length}, depth={current_depth}"
                     )
-                node_clusters.extend(
-                    RAPTOR_DBSCAN_Clustering.perform_clustering(
+
+                no_further_split = len(cluster_nodes) == len(nodes)
+                depth_limit_reached = current_depth >= max_depth
+
+                if no_further_split or depth_limit_reached:
+                    fallback_clusters = _split_nodes_by_length(
                         cluster_nodes,
-                        embedding_model_name,
-                        max_length_in_cluster=max_length_in_cluster,
-                        tokenizer=tokenizer,
-                        reduction_dimension=reduction_dimension,
-                        threshold=threshold,
-                        eps=eps,
-                        min_samples=min_samples,
-                        som_x=som_x,
-                        som_y=som_y,
-                        som_iterations=som_iterations,
-                        verbose=verbose,
+                        max_length_in_cluster,
+                        tokenizer,
                     )
-                )
+                    node_clusters.extend(fallback_clusters)
+                else:
+                    node_clusters.extend(
+                        RAPTOR_DBSCAN_Clustering.perform_clustering(
+                            cluster_nodes,
+                            embedding_model_name,
+                            max_length_in_cluster=max_length_in_cluster,
+                            tokenizer=tokenizer,
+                            reduction_dimension=reduction_dimension,
+                            threshold=threshold,
+                            eps=eps,
+                            min_samples=min_samples,
+                            som_x=som_x,
+                            som_y=som_y,
+                            som_iterations=som_iterations,
+                            verbose=verbose,
+                            current_depth=current_depth + 1,
+                            max_depth=max_depth,
+                        )
+                    )
             else:
                 node_clusters.append(cluster_nodes)
 
         return node_clusters
+
+def _split_nodes_by_length(
+    nodes: List[Node],
+    max_length_in_cluster: int,
+    tokenizer,
+) -> List[List[Node]]:
+    clusters: List[List[Node]] = []
+    current: List[Node] = []
+    current_len = 0
+
+    for node in nodes:
+        length = len(tokenizer.encode(node.text))
+        if current and current_len + length > max_length_in_cluster:
+            clusters.append(current)
+            current = [node]
+            current_len = length
+        else:
+            current.append(node)
+            current_len += length
+
+    if current:
+        clusters.append(current)
+
+    return clusters
