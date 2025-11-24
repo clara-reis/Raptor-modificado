@@ -5,6 +5,11 @@ from abc import ABC, abstractmethod
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
 
 
@@ -41,6 +46,42 @@ class GPT3TurboSummarizationModel(BaseSummarizationModel):
             )
 
             return response.choices[0].message.content
+
+        except Exception as e:
+            print(e)
+            return e
+
+
+class GeminiSummarizationModel(BaseSummarizationModel):
+    def __init__(self, model="gemini-2.0-flash-lite"):
+
+        self.model = model
+
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    def summarize(self, context, max_tokens=500, stop_sequence=None):
+
+        if genai is None:
+            raise RuntimeError("google-generativeai is not installed in this environment.")
+
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
+
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(self.model)
+
+            prompt = (
+                "Write a summary of the following, including as many key details as possible:\n\n"
+                f"{context}"
+            )
+
+            response = model.generate_content(
+                prompt,
+                generation_config={"max_output_tokens": max_tokens},
+            )
+
+            return response.text
 
         except Exception as e:
             print(e)

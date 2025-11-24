@@ -31,7 +31,8 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
 
 class SBertEmbeddingModel(BaseEmbeddingModel):
     def __init__(self, model_name="sentence-transformers/multi-qa-mpnet-base-cos-v1"):
-        self.model = SentenceTransformer(model_name)
+        # Força o modelo SBERT a rodar em CPU para evitar erros de falta de memória no backend MPS.
+        self.model = SentenceTransformer(model_name, device="cpu")
 
     def create_embedding(self, text):
         return self.model.encode(text)
