@@ -89,9 +89,17 @@ class ClusterTreeBuilder(TreeBuilder):
             logging.info(f"Constructing Layer {layer}")
 
             node_list_current_layer = get_node_list(current_level_nodes) #node_list_current_layer vira uma lista simples de Nodes (sem dicionário)
+            
+            # Define o tamanho do grid SOM com base na heurística
+            num_chunks = len(node_list_current_layer)
+            lattice_size = int((5 * (num_chunks ** 0.5)) ** 0.5)
+            lattice_size = max(lattice_size - 1, 1)  # Evita 0
+            som_x = som_y = lattice_size
 
+            logging.info(f"Layer {layer}: {num_chunks} chunks → SOM grid {som_x}x{som_y}")
+          
             #Mudar o critério de parada da árvore
-            if len(node_list_current_layer) <= 1:
+            if len(node_list_current_layer) <= 1 or lattice_size == 1 :
                 self.num_layers = layer
                 logging.info(
                     f"Stopping Layer construction: only one node left. Total layers in tree: {layer}"
@@ -103,11 +111,17 @@ class ClusterTreeBuilder(TreeBuilder):
                 node_list_current_layer,              # nodes
                 self.cluster_embedding_model,         # embedding_model_name
                 tokenizer=self.tokenizer,             # usa o mesmo tokenizer do TreeBuilder
-                som_x=5,
-                som_y=5,
+                som_x=som_x,
+                som_y=som_y,
                 som_iterations=1500,
                 verbose=False,
             )
+            
+            # adicionar critério de parada por estabilidade
+            # Verifica se a clusterização não está progredindo (estagnou)
+            if len(clusters) >= len(current_level_nodes):
+                logging.info(f"Stopping: clustering stalled (clusters={len(clusters)}, nodes={len(current_level_nodes)})")
+                break
 
             lock = Lock()
 
@@ -152,3 +166,4 @@ class ClusterTreeBuilder(TreeBuilder):
             )
 
         return current_level_nodes
+
