@@ -581,7 +581,7 @@ def evaluate_qasper_subset(
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RAPTOR+SOM+LLaMA on QASPER (subset)")
-    parser.add_argument("--num-papers", type=int, default=10, help="Number of QASPER papers to evaluate")
+    parser.add_argument("--num-papers", type=int, default=100, help="Number of QASPER papers to evaluate")
     parser.add_argument("--num-questions-per-paper", type=int, default=5, help="Max questions per paper to evaluate")
     parser.add_argument("--model", type=str, default="llama3.2:3b", help="Model name to use (Ollama or Gemini, depending on backend)")
     parser.add_argument("--split", type=str, default="validation", help="QASPER split to use (e.g., validation, test)")
@@ -595,7 +595,7 @@ def main():
     parser.add_argument(
         "--cluster",
         type=str,
-        default="full",
+        default="som",
         choices=["som", "dbscan", "gmm","full"],
         help="Clustering backend to use for RAPTOR tree (som, dbscan, gmm) ou 'full' para usar o documento inteiro como contexto",
     )
