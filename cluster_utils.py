@@ -7,13 +7,14 @@ import numpy as np
 import tiktoken
 import umap
 from sklearn.mixture import GaussianMixture
-
+from sklearn.cluster import DBSCAN
 from minisom import MiniSom
 
 # Initialize logging
 logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
 
 from tree_structures import Node
+
 # Import necessary methods from other modules
 from utils import get_embeddings
 
@@ -32,10 +33,27 @@ def global_cluster_embeddings(
     n_neighbors: Optional[int] = None,
     metric: str = "cosine",
 ) -> np.ndarray:
+    n_samples = len(embeddings)
+
+    # Para poucos pontos, UMAP/spectral pode falhar (k >= N); nesse caso, não reduz.
+    if n_samples <= 3:
+        return embeddings
+
     if n_neighbors is None:
-        n_neighbors = int((len(embeddings) - 1) ** 0.5)
+        n_neighbors = int((n_samples - 1) ** 0.5)
+
+    # Garante 2 <= n_neighbors <= n_samples - 1
+    n_neighbors = max(2, min(n_neighbors, n_samples - 1))
+
+    # Garante que n_components < n_samples para evitar k >= N no espectral
+    if dim >= n_samples:
+        dim = max(1, n_samples - 1)
+
     reduced_embeddings = umap.UMAP(
-        n_neighbors=n_neighbors, n_components=dim, metric=metric
+        n_neighbors=n_neighbors,
+        n_components=dim,
+        metric=metric,
+        init="random",  # evita spectral layout e chamada a eigsh com k>=N
     ).fit_transform(embeddings)
     return reduced_embeddings
 
@@ -43,12 +61,26 @@ def global_cluster_embeddings(
 def local_cluster_embeddings(
     embeddings: np.ndarray, dim: int, num_neighbors: int = 10, metric: str = "cosine"
 ) -> np.ndarray:
+    n_samples = len(embeddings)
+
+    if n_samples <= 3:
+        return embeddings
+
+    # Garante 2 <= num_neighbors <= n_samples - 1
+    num_neighbors = max(2, min(num_neighbors, n_samples - 1))
+
+    if dim >= n_samples:
+        dim = max(1, n_samples - 1)
+
     reduced_embeddings = umap.UMAP(
-        n_neighbors=num_neighbors, n_components=dim, metric=metric
+        n_neighbors=num_neighbors,
+        n_components=dim,
+        metric=metric,
+        init="random",
     ).fit_transform(embeddings)
     return reduced_embeddings
 
-'''
+
 #Tenta descobrir o número ótimo de componentes do GMM com base no critério BIC.
 def get_optimal_clusters(
     embeddings: np.ndarray, max_clusters: int = 50, random_state: int = RANDOM_SEED
@@ -130,14 +162,30 @@ def perform_clustering(
     if verbose:
         logging.info(f"Total Clusters: {total_clusters}")
     return all_local_clusters #all_local_clusters[i] é um np.array contendo os IDs de cluster aos quais o ponto i pertence.
-'''
+
 
 class ClusteringAlgorithm(ABC):
     @abstractmethod
     def perform_clustering(self, embeddings: np.ndarray, **kwargs) -> List[List[int]]:
         pass
 
-'''
+class ClusteringAlgorithm_som(ABC):
+    @abstractmethod
+    def perform_clustering_som(
+        nodes: List[Node],
+        embedding_model_name: str,
+        max_length_in_cluster: int = 3500,
+        tokenizer=tiktoken.get_encoding("cl100k_base"),
+        som_x: int = 5,
+        som_y: int = 5,
+        som_iterations: int = 1500,
+        verbose: bool = False,
+    ) -> List[List[Node]]:
+        """
+        Interface específica para algoritmos baseados em SOM.
+        """
+        pass
+
 class RAPTOR_Clustering(ClusteringAlgorithm):
     def perform_clustering(
         nodes: List[Node],
@@ -192,7 +240,7 @@ class RAPTOR_Clustering(ClusteringAlgorithm):
                 node_clusters.append(cluster_nodes)
 
         return node_clusters
-'''
+
 
 
 ##########
@@ -246,8 +294,8 @@ def som_cluster(
 
     return clusters 
 
-class RAPTOR_Clustering(ClusteringAlgorithm):
-    def perform_clustering(
+class SOM_Clustering(ClusteringAlgorithm_som):
+    def perform_clustering_som(
         nodes: List[Node],
         embedding_model_name: str,
         max_length_in_cluster: int = 3500,
@@ -291,7 +339,7 @@ class RAPTOR_Clustering(ClusteringAlgorithm):
                         f"reclustering cluster with {len(cluster_nodes)} nodes"
                     )
                 node_clusters.extend(
-                    RAPTOR_Clustering.perform_clustering(
+                    SOM_Clustering.perform_clustering_som(
                         cluster_nodes,
                         embedding_model_name,
                         max_length_in_cluster=max_length_in_cluster,
@@ -299,6 +347,93 @@ class RAPTOR_Clustering(ClusteringAlgorithm):
                         som_x=som_x,
                         som_y=som_y,
                         som_iterations=som_iterations,
+                        verbose=verbose,
+                    )
+                )
+            else:
+                node_clusters.append(cluster_nodes)
+
+        return node_clusters
+
+class RAPTOR_DBSCAN_Clustering(ClusteringAlgorithm):
+    @staticmethod
+    def perform_clustering(
+        nodes: List[Node],
+        embedding_model_name: str,
+        max_length_in_cluster: int = 3500,
+        tokenizer=tiktoken.get_encoding("cl100k_base"),
+        reduction_dimension: int = 10,
+        threshold: float = 0.1,
+        eps: float = 0.75,
+        min_samples: int = 5,
+        verbose: bool = False,
+    ) -> List[List[Node]]:
+        """Cluster nodes using UMAP reduction + DBSCAN.
+
+        The extra "threshold" and som_* arguments are accepted only for API
+        compatibility with RAPTOR_Clustering and are ignored by DBSCAN.
+        """
+
+        if not nodes:
+            return []
+
+        # Get embeddings matrix (N, D)
+        embeddings = np.array([
+            node.embeddings[embedding_model_name] for node in nodes
+        ])
+
+        if len(embeddings) == 1:
+            return [[nodes[0]]]
+
+        # Reduce dimensionality with UMAP before DBSCAN
+        effective_dim = max(2, min(reduction_dimension, len(embeddings) - 1))
+        reduced_embeddings = global_cluster_embeddings(
+            embeddings,
+            effective_dim,
+            metric="cosine",
+        )
+
+        # Run DBSCAN in the reduced space
+        db = DBSCAN(eps=eps, min_samples=min_samples)
+        labels = db.fit_predict(reduced_embeddings)
+
+        unique_labels = set(labels)
+        node_clusters: List[List[Node]] = []
+
+        for label in unique_labels:
+            indices = np.where(labels == label)[0]
+
+            # Noise points (-1) become single-node clusters
+            if label == -1:
+                for idx in indices:
+                    node_clusters.append([nodes[idx]])
+                continue
+
+            cluster_nodes = [nodes[i] for i in indices]
+
+            if len(cluster_nodes) == 1:
+                node_clusters.append(cluster_nodes)
+                continue
+
+            total_length = sum(
+                len(tokenizer.encode(node.text)) for node in cluster_nodes
+            )
+
+            if total_length > max_length_in_cluster:
+                if verbose:
+                    logging.info(
+                        f"[DBSCAN] Reclustering cluster with {len(cluster_nodes)} nodes, total_length={total_length}"
+                    )
+                node_clusters.extend(
+                    RAPTOR_DBSCAN_Clustering.perform_clustering(
+                        cluster_nodes,
+                        embedding_model_name,
+                        max_length_in_cluster=max_length_in_cluster,
+                        tokenizer=tokenizer,
+                        reduction_dimension=reduction_dimension,
+                        threshold=threshold,
+                        eps=eps,
+                        min_samples=min_samples,
                         verbose=verbose,
                     )
                 )
