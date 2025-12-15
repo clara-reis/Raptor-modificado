@@ -1,4 +1,4 @@
-## Avaliação de Técnicas de Clusterização em Arquiteturas RAG com RAPTOR Modificado
+# Avaliação de Técnicas de Clusterização em Arquiteturas RAG com RAPTOR Modificado
 
 Este repositório contém uma versão modificada do código do artigo RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval, com experimentos focados na avaliação do impacto de diferentes algoritmos de clusterização na construção da árvore hierárquica de chunks para sistemas RAG (Retrieval-Augmented Generation).
 
@@ -14,7 +14,8 @@ O script principal qasper_eval_som_full.py realiza:
 
 # Resultados:
 
-F1 médio: 23.25 %
+F1 médio: 23.25%
+
 Algoritmo com melhor desempenho: SOM com distância cosseno
 
 
