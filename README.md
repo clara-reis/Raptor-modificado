@@ -1,9 +1,9 @@
 # Avaliação de Técnicas de Clusterização em Arquiteturas RAG com RAPTOR Modificado
 
-Este repositório contém uma versão modificada do código do artigo RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval, com experimentos focados na avaliação do impacto de diferentes algoritmos de clusterização na construção da árvore hierárquica de chunks para sistemas RAG (Retrieval-Augmented Generation).
+Este repositório contém uma versão modificada do código do artigo RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval (https://github.com/parthsarthi03/raptor), com experimentos focados na avaliação do impacto de diferentes algoritmos de clusterização na construção da árvore hierárquica de chunks para sistemas RAG (Retrieval-Augmented Generation).
 
 # Objetivo:
-investigar como diferentes métodos de agrupamento (GMM, DBSCAN, SOM) afetam a formação dos chunks textuais e o desempenho do sistema RAG em tarefas de QA em documentos longos (usando o dataset QASPER).
+Investigar como diferentes métodos de agrupamento (GMM, DBSCAN, SOM) afetam a formação dos chunks textuais e o desempenho do sistema RAG em tarefas de QA em documentos longos (usando o dataset QASPER).
 
 O script principal qasper_eval_som_full.py realiza:
 
